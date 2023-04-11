@@ -8,8 +8,6 @@ localtime=$(date '+%Y%m%d%H%M%S')
 for file in $(git diff --cached --name-only --diff-filter=d); do
 	case $(file -bi $file)$file in
 		*"perl"*|*.pl|*.pm)
-			
-
 			## create log file
 			if [[ ! -d "./target/perl" ]]
 			then
