@@ -1,1 +1,7 @@
-/home/moffinguer/.gitconfig
+[user]
+	name = Moffinguer
+	email = fernandomateos.fermatgom@gmail.com
+[core]
+	editor = nvim
+[commit]
+	template = /home/moffinguer/.gitmessage
