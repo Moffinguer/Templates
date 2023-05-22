@@ -15,7 +15,7 @@ function print() # (message)
 {
 	local message=$1
 	length=${#message}
-	
+
 	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
 	printf '# %s #\n' "$1"
 	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
@@ -27,16 +27,16 @@ function skip_files() # ($file, $file_type) => ($skip)
 {
 	for exception in "${exceptionfiles[@]}"; do
 		local matches_exception=$( echo "$2" | grep -i "$exception" )
-		
+
 		if [[ $1 != $exception && ! $1 =~ \.$exception$ && -z $matches_exception ]]; then
-			continue	
+			continue
 		fi
 		echo ""
 		echo ">>>> Skip file $1"
 		echo ""
 		return 1
 	done
-	return 0	
+	return 0
 }
 
 function perl_files() # ($file) => ()
@@ -54,15 +54,30 @@ function perl_files() # ($file) => ()
 		fi
 		logfile="$logfile"/perl"$localtime".log
 
-		if [[ ! -f "$logfile" ]] 
+		if [[ ! -f "$logfile" ]]
 		then
 			touch "$logfile"
-		fi	
+		fi
 	fi
 
-	### format and analyce perl files
-	perltidy --pro=./hook-config/perl/.perltidyrc "$1" >> "$logfile" && mv "$1.tdy" "$1" && perlcritic --profile ./hook-config/perl/.perlcriticrc "$1" >> $logfile
+	syntax_check = $( perl -cw "$1" )
 
+	echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
+
+	if [[ $syntax_check != "$1 syntax OK" ]]
+		print "$1 had syntax errors. Check log file"
+		return 1
+	fi
+
+	### format
+	perltidy --pro=./hook-config/perl/.perltidyrc "$1" >> "$logfile" && mv "$1.tdy" "$1"
+	if [[ $? != 0 ]]; then
+		print "$1 had errors on formatting. Check log file"
+		return 1
+	fi
+
+	### linter
+	perlcritic --profile ./hook-config/perl/.perlcriticrc "$1" >> $logfile
 	if [[ $? != 0 ]]; then
 		print "$1 did not pass PERLCRITIC configuration. Check log file"
 		return 1
@@ -81,7 +96,6 @@ for file in "${modifiedfiles[@]}"; do
 
 	## Check if file is skipeable
 	skip_files "$file" "$file_type"
-
 	if [[ $? != 0 ]]; then
 		continue
 	fi
