@@ -64,7 +64,7 @@ function perl_files() # ($file) => ()
 
 	echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
 
-	if [[ $syntax_check != "$1 syntax OK" ]]
+	if [[ $syntax_check != "$1 syntax OK" ]]; then
 		print "$1 had syntax errors. Check log file"
 		return 1
 	fi
