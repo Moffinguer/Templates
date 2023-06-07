@@ -41,10 +41,11 @@ function skip_files() # ($file, $file_type) => ($skip)
 
 function perl_files() # ($file) => ()
 {
-	print "Checking file $1"
-
 	if [[ "$logfile" != "./target/perl/perl$localtime.log" ]]; then
-
+		if [[ -z $PERLTIDY || -z $PERLCRITIC ]]; then
+			print "Set PERLTIDY and PERLCRITIC as enviroment variables pointing to the config files"
+			exit 1
+		fi
 		## create log file
 		logfile="./target/perl"
 
@@ -60,7 +61,7 @@ function perl_files() # ($file) => ()
 		fi
 	fi
 
-	syntax_check = $( perl -cw "$1" )
+	syntax_check=$( perl -cw $1 2>&1 )
 
 	echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
 
@@ -70,14 +71,15 @@ function perl_files() # ($file) => ()
 	fi
 
 	### format
-	perltidy --pro=./hook-config/perl/.perltidyrc "$1" >> "$logfile" && mv "$1.tdy" "$1"
+	perltidy "$1" >> "$logfile"
 	if [[ $? != 0 ]]; then
 		print "$1 had errors on formatting. Check log file"
 		return 1
 	fi
+	mv "$1.tdy" "$1"
 
 	### linter
-	perlcritic --profile ./hook-config/perl/.perlcriticrc "$1" >> $logfile
+	perlcritic "$1" >> $logfile
 	if [[ $? != 0 ]]; then
 		print "$1 did not pass PERLCRITIC configuration. Check log file"
 		return 1
@@ -99,6 +101,8 @@ for file in "${modifiedfiles[@]}"; do
 	if [[ $? != 0 ]]; then
 		continue
 	fi
+
+	print "Checking file $file"
 
 	case $file_type$file in
 		*.java|*"java"*)
