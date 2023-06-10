@@ -6,22 +6,22 @@
 #
 #[<footer>]
 #
-#### Type: 
-####### -build: for updating build configuration 
-####### -ci: changes to Continuous Integration files and scripts 
-####### -chore: changes that do not change test or source files 
-####### -dependencies: update dependencies 
-####### -devdependencies: update devel dependencies 
-#######	-docs: for changes to the documentation 
-#######	-feat: for a new feature for the user, not a new feature for build script 
-#######	-fix: for a bug fix for the user, not a fix to a build script 
-####### -initial: first commit 
-####### -metadata: update metadata 
-#######	-perf: for performance improvements 
-####### -peerdependencies: update peer dependencies 
-#######	-refactor: for refactoring production code 
-####### -revert: revert changes 
-#######	-style: for formatting changes 
+#### Type:
+####### -build: for updating build configuration
+####### -ci: changes to Continuous Integration files and scripts
+####### -chore: changes that do not change test or source files
+####### -dependencies: update dependencies
+####### -devdependencies: update devel dependencies
+#######	-docs: for changes to the documentation
+#######	-feat: for a new feature for the user, not a new feature for build script
+#######	-fix: for a bug fix for the user, not a fix to a build script
+####### -initial: first commit
+####### -metadata: update metadata
+#######	-perf: for performance improvements
+####### -peerdependencies: update peer dependencies
+#######	-refactor: for refactoring production code
+####### -revert: revert changes
+#######	-style: for formatting changes
 #######	-test: for adding missing tests, refactoring tests; no production code change
 ####################################################################################################################
 ### Add "!" when the change is relevant and changes behaviour
