@@ -1,39 +1,30 @@
 ## Ignore all Files by default, except gitignore
 *
-!/.gitignore
+### Remove this line
+!*
+###
+!.gitignore
 
 ## Ignore Folders ( Alphabetically )
-/target/
+target/
 
 ## Ignore content of Folders ( Alphabetically )
-!/.github/
-/.github/*
-!/.github/workflows/
-/.github/workflows/*
-!/git/
-/git/*
+# Empty By default
 
 ## Ignore Content Of Folder By Regex ( Alphabetically )
 # Empty By Default
 
 ## Exception Complete Folders ( Alphabetically )
-!/.git-templates/
-!/.git-templates/*
-!/perl/
-!/perl/*
+# Empty By default
 
 ## Exception Folder By Regex
 # Empty By Default
 
 ## Exception Files inside Folder ( From Root to Inside )
-!/git/config
-!/.github/workflows/github-actions-demo.yml
+# Empty By default
 
 ## Exception Files ( Root Folder )
-!/.gitconfig
-!/.gitlab-ci.yml
-!/README.md
-!/LICENSE
+!README.md
 
 ## Exception Files By Regex
 # Empty By default
