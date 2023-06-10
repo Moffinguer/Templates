@@ -4,4 +4,8 @@
 [core]
 	editor = nvim
 [commit]
-	template = /home/moffinguer/.gitmessage
+	template = /home/moffinguer/.git-templates/.gitmessage
+[init]
+	templatedir = ~/.git-templates
+[diff]
+	wsErrorHighlight = all
