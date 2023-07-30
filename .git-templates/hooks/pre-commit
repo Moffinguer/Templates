@@ -7,7 +7,7 @@ localtime=$(date '+%Y%m%d%H%M%S')
 modifiedfiles=($(git diff --cached --name-only --diff-filter=d))
 
 ## Add file types, extensions or certain filenames to be ignored during the check
-exceptionfiles=(java python py perl/.perltidyrc  perl/.perltidy)
+exceptionfiles=()
 logfile=""
 
 
@@ -39,52 +39,53 @@ function skip_files() # ($file, $file_type) => ($skip)
 	return 0
 }
 
-function perl_files() # ($file) => ()
+function perl_files() # ($file, $enabled) => ()
 {
-	if [[ "$logfile" != "./target/perl/perl$localtime.log" ]]; then
-		if [[ -z $PERLTIDY || -z $PERLCRITIC ]]; then
-			print "Set PERLTIDY and PERLCRITIC as enviroment variables pointing to the config files"
-			exit 1
+	if [[ $2 == 1 ]]; then
+		if [[ "$logfile" != "./target/perl/perl$localtime.log" ]]; then
+			if [[ -z $PERLTIDY || -z $PERLCRITIC ]]; then
+				print "Set PERLTIDY and PERLCRITIC as enviroment variables pointing to the config files"
+				exit 1
+			fi
+			## create log file
+			logfile="./target/perl"
+
+			if [[ ! -d "$logfile" ]]
+			then
+				mkdir -p "$logfile"
+			fi
+			logfile="$logfile"/perl"$localtime".log
+
+			if [[ ! -f "$logfile" ]]
+			then
+				touch "$logfile"
+			fi
 		fi
-		## create log file
-		logfile="./target/perl"
 
-		if [[ ! -d "$logfile" ]]
-		then
-			mkdir -p "$logfile"
+		syntax_check=$( perl -cw $1 2>&1 )
+
+		echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
+
+		if [[ $syntax_check != "$1 syntax OK" ]]; then
+			print "$1 had syntax errors. Check log file"
+			return 1
 		fi
-		logfile="$logfile"/perl"$localtime".log
 
-		if [[ ! -f "$logfile" ]]
-		then
-			touch "$logfile"
+		### format
+		perltidy "$1" >> "$logfile"
+		if [[ $? != 0 ]]; then
+			print "$1 had errors on formatting. Check log file"
+			return 1
+		fi
+		mv "$1.tdy" "$1"
+
+		### linter
+		perlcritic "$1" >> $logfile
+		if [[ $? != 0 ]]; then
+			print "$1 did not pass PERLCRITIC configuration. Check log file"
+			return 1
 		fi
 	fi
-
-	syntax_check=$( perl -cw $1 2>&1 )
-
-	echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
-
-	if [[ $syntax_check != "$1 syntax OK" ]]; then
-		print "$1 had syntax errors. Check log file"
-		return 1
-	fi
-
-	### format
-	perltidy "$1" >> "$logfile"
-	if [[ $? != 0 ]]; then
-		print "$1 had errors on formatting. Check log file"
-		return 1
-	fi
-	mv "$1.tdy" "$1"
-
-	### linter
-	perlcritic "$1" >> $logfile
-	if [[ $? != 0 ]]; then
-		print "$1 did not pass PERLCRITIC configuration. Check log file"
-		return 1
-	fi
-
 	print "$1 had no errors"
 
 	return 0
@@ -110,7 +111,7 @@ for file in "${modifiedfiles[@]}"; do
 			;;
 
 		*"perl"*|*.pl|*.pm)
-			perl_files "$file"
+			perl_files "$file" "0"
 			;;
 		*"python"*|*.py)
 			print "$file had no errors"
