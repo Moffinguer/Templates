@@ -21,8 +21,6 @@
 !/.git-templates/*
 !/perl/
 !/perl/*
-!/docs/
-!/docs/*
 
 ## Exception Folder By Regex
 # Empty By Default
