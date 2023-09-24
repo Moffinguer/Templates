@@ -23,8 +23,7 @@ git diff --name-status HEAD~1 | while read -r file ; do
 done
 
 mv "$tmp" "$commit_msg_file"
-msg_stated=$( cat "$commit_msg_file" )
 
-git commit --amend "$msg_stated"
+git commit --amend -F "$commit_msg_file"
 
 exit 0
