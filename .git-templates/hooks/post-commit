@@ -8,8 +8,8 @@ echo "$commit_msg" >> "$tmp"
 echo "" >>   "$tmp"
 
 git diff --name-status HEAD~1 | while read -r file ; do
-	type=$(echo "$file" | cut -f1 -d'       ' )
-	name=$( echo "$file" | cut -f2 -d'      ' )
+	type=$(echo "$file" | cut -f1 -d' ' )
+	name=$( echo "$file" | cut -f2 -d' ' )
 	case "$type" in
 		"M") translated_status="modified";;
 		"A") translated_status="added";;
@@ -21,5 +21,7 @@ git diff --name-status HEAD~1 | while read -r file ; do
 	esac
 	echo "$translated_status: $name" >> "$tmp"
 done
+
+mv "$tmp" "$commit_msg_file"
 
 exit 0
