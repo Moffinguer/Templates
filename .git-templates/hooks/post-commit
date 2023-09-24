@@ -19,11 +19,12 @@ git diff --name-status HEAD~1 | while read -r file ; do
 		"U") translated_status="updated but unmerged";;
 		*) translated_status="unknown";;
 	esac
-	echo "$translated_status: $name"
 	echo "$translated_status: $name" >> "$tmp"
 done
 
 mv "$tmp" "$commit_msg_file"
-git commit --amend "$( cat "$commit_msg_file" )"
+msg_stated=$( cat "$commit_msg_file" )
+
+git commit --amend "$msg_stated"
 
 exit 0
