@@ -145,14 +145,12 @@ function perl_files() # ($file, $enabled) => ()
 		fi
 
 		### format
-		perltidy "$1" >> "$logfile"
+		perltidy "$1" >> "$1.tdy" 2>> "$logfile"
 		if [[ $? != 0 ]]; then
 			print "$1 had errors on formatting. Check log file"
 			return 1
 		fi
 		mv "$1.tdy" "$1"
-
-
 
 		### linter
 		perlcritic "$1" >> $logfile
