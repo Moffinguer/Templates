@@ -108,9 +108,9 @@ function perl_files() # ($file, $enabled) => ()
 {
 	if [[ $2 == 1 ]]; then
 		if [[ "$logfile" != "./target/perl/perl$localtime.log" ]]; then
-			which perlcritic >> /dev/null && which perltidy >> /dev/null
+			which perlcritic >> /dev/null && which perltidy >> /dev/null && which perlimports >> /dev/null
 			if [[ $? == 1 ]]; then
-				print "Perltidy and/or Perlcritic are not installed"
+				print "PerlTidy, PerlCritic and/or PerlImports are not installed"
 				exit 1
 			fi
 			## create log file
@@ -137,6 +137,13 @@ function perl_files() # ($file, $enabled) => ()
 			return 1
 		fi
 
+		## imports
+		perlimports --filename "$1" >> "$logfile"
+		if [[ $? != 0 ]]; then
+			print "$1 had errors on formatting imports. Check log file"
+			return 1
+		fi
+
 		### format
 		perltidy "$1" >> "$logfile"
 		if [[ $? != 0 ]]; then
@@ -144,6 +151,8 @@ function perl_files() # ($file, $enabled) => ()
 			return 1
 		fi
 		mv "$1.tdy" "$1"
+
+
 
 		### linter
 		perlcritic "$1" >> $logfile
