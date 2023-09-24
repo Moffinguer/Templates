@@ -5,7 +5,7 @@ COMMIT_SOURCE=$2
 SHA1=$3
 
 tmp="/tmp/commit_temp_message"
-cat "$COMMIT_MSG_FILE" >> "$tmp"
+cat "$COMMIT_MSG_FILE" >>    "$tmp"
 
 ## Remove unnecesarry content
 sed -i '/^# Please enter the commit message for your changes\|^# with \|^$/d' "$tmp"
