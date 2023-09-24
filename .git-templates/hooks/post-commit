@@ -5,7 +5,7 @@ commit_msg=$(cat "$commit_msg_file")
 tmp="/tmp/commit_temp_message"
 
 echo "$commit_msg" >> "$tmp"
-echo "" >>   "$tmp"
+echo "" >> "$tmp"
 
 git diff --name-status HEAD~1 | while read -r file ; do
 	type=$(echo "$file" | cut -f1 -d' ' )
@@ -19,6 +19,7 @@ git diff --name-status HEAD~1 | while read -r file ; do
 		"U") translated_status="updated but unmerged";;
 		*) translated_status="unknown";;
 	esac
+	echo "$translated_status: $name"
 	echo "$translated_status: $name" >> "$tmp"
 done
 
