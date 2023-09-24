@@ -17,7 +17,7 @@ sed -i '1s/$/\n/' "$tmp"
 echo "" >> "$tmp"
 
 for file in "$(git diff --name-status HEAD~1)"; do
-	translated_status=$(echo "$file" | cut -f1 -d' ' )
+	type=$(echo "$file" | cut -f1 -d' ' )
 	name=$( echo "$file" | cut -f2 -d' ' )
 	case "$type" in
 		*"M"*) translated_status="modified";;
