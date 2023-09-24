@@ -21,8 +21,6 @@
 !/.git-templates/*
 !/perl/
 !/perl/*
-!/clang/
-!/clang/*
 !/documentation/
 !/documentation/*
 
