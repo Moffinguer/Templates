@@ -24,5 +24,6 @@ git diff --name-status HEAD~1 | while read -r file ; do
 done
 
 mv "$tmp" "$commit_msg_file"
+git commit --ammend "$( cat "$commit_msg_file" )"
 
 exit 0
