@@ -8,7 +8,6 @@ function print() # (message)
 	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
 	printf '# %s #\n' "$1"
 	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
-
 }
 
 
