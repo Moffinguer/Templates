@@ -14,6 +14,21 @@ sed -i '/On branch/d; n; /Changes not staged for commit:/q' "$tmp"
 sed -i '/Changes not staged for commit:/,$d' "$tmp"
 sed -i '1s/$/\n/' "$tmp"
 
-mv "$tmp" "$COMMIT_MSG_FILE" 
+git diff --name-status HEAD~1 | while read -r file ; do
+	type=$(echo "$file" | awk '{print $1}' )
+	name=$( echo "$file" | awk '{$1=""; print $0}' | sed 's/^ //')
+	case "$type" in
+		"M") translated_status="modified";;
+		"A") translated_status="added";;
+		"D") translated_status="deleted";;
+		"R") translated_status="renamed";;
+		"C") translated_status="copied";;
+		"U") translated_status="updated but unmerged";;
+		*) translated_status="unknown";;
+	esac
+	echo -e "\t$translated_status:   $name" >> "$tmp"
+done
 
-exit 0 
+mv "$tmp" "$COMMIT_MSG_FILE"
+
+exit 0
