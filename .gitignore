@@ -19,6 +19,8 @@
 ## Exception Complete Folders ( Alphabetically )
 !/.git-templates/
 !/.git-templates/*
+!/java/
+!/java/*
 !/perl/
 !/perl/*
 !/python/
