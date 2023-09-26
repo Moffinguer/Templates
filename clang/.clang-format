@@ -225,3 +225,7 @@ WhitespaceSensitiveMacros:
 ---
 Language:        Java
 BasedOnStyle:  Google
+
+---
+Language:       JavaScript
+BasedOnStyle:  Google
