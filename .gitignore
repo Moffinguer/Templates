@@ -21,8 +21,12 @@
 !/.git-templates/*
 !/javascript/
 !/javascript/*
+!/java/
+!/java/*
 !/perl/
 !/perl/*
+!/python/
+!/python/*
 !/clang/
 !/clang/*
 !/documentation/

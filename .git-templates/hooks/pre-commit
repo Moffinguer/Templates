@@ -51,11 +51,19 @@ function java_files() #( $file, $enabled ) => ()
 			fi
 		fi
 
+		## Format
 		clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
 		if [[ $? != 0 ]]; then
 			print "$1 had errors on formatting. Check log file"
 			return 1
 		fi
+
+		java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
+		if [[ $? != 0 ]]; then
+			print "$1 did not pass CHECKSTYLE configuration. Check log file"
+			return 1
+		fi
+
 	fi
 	print "$1 had no errors"
 
@@ -122,12 +130,14 @@ function c_files() # ($file, $enabled, extension) => ()
 			fi
 		fi
 
+		# Format
 		clang-format --style=file --fallback-style=LLVM -i "$1" >> "$logfile"
 		if [[ $? != 0 ]]; then
 			print "$1 had errors on formatting. Check log file"
 			return 1
 		fi
 
+		# Lint
 		clang-tidy --config-file=.clang-tidy "$1" >> "$logfile" 2>&1
 		if [[ $? != 0 ]]; then
 			print "$1 did not pass CLANG-TIDY configuration. Check log file"
@@ -139,6 +149,52 @@ function c_files() # ($file, $enabled, extension) => ()
 
 	return 0
 }
+
+
+function python_files() #($file, $enabled) => ()
+{
+	if [[ $2 == 1 ]]; then
+		if [[ "$logfile" != "./target/python/python$localtime.log" ]]; then
+			which autopep8 >> /dev/null && which pylint >> /dev/null
+			if [[ $? == 1 ]]; then
+				print "Autopep8 and/or PyLint are not installed"
+				exit 1
+			fi
+			## create log file
+			logfile="./target/python"
+
+			if [[ ! -d "$logfile" ]]
+			then
+				mkdir -p "$logfile"
+			fi
+			logfile="$logfile"/python"$localtime".log
+
+			if [[ ! -f "$logfile" ]]
+			then
+				touch "$logfile"
+			fi
+		fi
+
+		### Format
+		autopep8 "$1" >> "$1" 2>> "$logfile"
+		if [[ $? != 0 ]]; then
+			print "$1 had errors on formatting. Check log file"
+			return 1
+		fi
+
+		### Lint
+		pylint "$1" >> $logfile 2>> "$logfile"
+		if [[ $? != 0 ]]; then
+			print "$1 did not pass PyLint configuration. Check log file"
+			return 1
+		fi
+	fi
+	print "$1 had no errors"
+
+	return 0
+}
+
+
 
 function perl_files() # ($file, $enabled) => ()
 {
@@ -173,14 +229,14 @@ function perl_files() # ($file, $enabled) => ()
 			return 1
 		fi
 
-		## imports
+		## Import
 		perlimports --filename "$1" >> "$logfile"
 		if [[ $? != 0 ]]; then
 			print "$1 had errors on formatting imports. Check log file"
 			return 1
 		fi
 
-		### format
+		### Format
 		perltidy "$1" >> "$1.tdy" 2>> "$logfile"
 		if [[ $? != 0 ]]; then
 			print "$1 had errors on formatting. Check log file"
@@ -188,7 +244,7 @@ function perl_files() # ($file, $enabled) => ()
 		fi
 		mv "$1.tdy" "$1"
 
-		### linter
+		### Lint
 		perlcritic "$1" >> $logfile
 		if [[ $? != 0 ]]; then
 			print "$1 did not pass PERLCRITIC configuration. Check log file"
@@ -231,19 +287,19 @@ for file in "${modifiedfiles[@]}"; do
 	print "Checking file $file"
 	case $file_type$file in
 		*.cpp)
-			c_files "$file" "1" "cpp"
+			c_files "$file" "0" "cpp"
 			;;
 		*.c)
-			c_files "$file" "1" "c"
+			c_files "$file" "0" "c"
 			;;
 		*.pl|*.pm|*"perl"*)
 			perl_files "$file" "0"
 			;;
 		*.java)
-			java_files "$file" "1"
+			java_files "$file" "0"
 			;;
 		*"python"*|*.py)
-			print "$file had no errors"
+			python_files "$file" "0"
 			;;
 		*)
 			print "$file had no errors"
