@@ -9,7 +9,7 @@ Explain which software or requirements we need, before proceeding to the instala
 - Step 1
 - Step 2
     -  Aditional steps
-        - More aditional Steps  
+        - More aditional Steps
 - Step 3
 
 
