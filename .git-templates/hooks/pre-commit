@@ -10,144 +10,198 @@ function print() # (message)
 	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
 }
 
-declare -A tools_checked
-declare -A tool_args
-declare -A error_messages
-
-function check_tool() #($tool)
+function file_analysis() # ($file, $extension) => ()
 {
-	tool=$1
-	if [[ -n "${tools_checked[$tool]}" ]]; then
-		return ${tools_checked[$tool]}
-	fi
-	command -v "$tool" > /dev/null 2>&1
-	tools_checked["$tool"]=$?
-	if [[ ${tools_checked[$tool]} -eq 0 ]]; then
-		case $tool in
-			"autopep8")
-				tool_args["$tool"]=""
-				error_messages["$tool"]="File could not be formatted with autopep8. Check log files"
-				;;
-			"black")
-				tool_args["$tool"]="--check --verbose --target-version py38 --target-version py39 --target-version py310 --target-version py311 --python-cell-magics --skip-string-normalization --preview"
-				error_messages["$tool"]="File could not be formatted with black. Check log files"
-				;;
-			"pybetter")
-				tool_args["$tool"]="--exclude B004"
-				error_messages["$tool"]="File could not be formatted with pybetter. Check log files"
-				;;
-			"unify")
-				tool_args["$tool"]="--in-place"
-				error_messages["$tool"]="File could not be formatted with unify. Check log files"
-				;;
-			"eradicate")
-				tool_args["$tool"]="--in-place"
-				error_messages["$tool"]="File could not be formatted with eradicate. Check log files"
-				;;
-			"teyit")
-				tool_args["$tool"]="--show-stats --fail-on-change"
-				error_messages["$tool"]="File could not be formatted with teyit. Check log files"
-				;;
-			"isort")
-				tool_args["$tool"]=""
-				error_messages["$tool"]="File could not be formatted with isort. Check log files"
-				;;
-			"ssort")
-				tool_args["$tool"]="--check"
-				error_messages["$tool"]="File could not be formatted with ssort. Check log files"
-				;;
-			"pylint")
-				tool_args["$tool"]=""
-				error_messages["$tool"]="File did not pass PYLING configuration. Check log files"
-				;;
-			"perltidy")
-				tool_args["$tool"]=""
-				error_messages["$tool"]="File could not be formatted with perltidy. Check log files"
-				;;
-			"perlimports")
-				tool_args["$tool"]="--filename"
-				error_messages["$tool"]="File could not be formatted with perlimports. Check log files"
-				;;
-			"perlcritic")
-				tool_args["$tool"]=""
-				error_messages["$tool"]="File did not pass PERLCRITIC configuration. Check log files"
-				;;
-			"perl")
-				tool_args["$tool"]=""
-				error_messages["$tool"]="File had syntax errors. Check log file"
-				;;
-			"clang-format")
-				tool_args["$tool"]="--style=file -i"
-				error_messages["$tool"]="File could not be formatted with clang-format. Check log files"
-				;;
-			"clang-tidy")
-				tool_args["$tool"]="--config-file=.clang-tidy"
-				error_messages["$tool"]="File did not pass CLANG-TIDY configuration. Check log files"
-				;;
-		esac
-	fi
-	if [[ $tool -eq "checkstyle" ]]; then
-		tool_args["$tool"]=""
-		error_messages["$tool"]="File did not pass CHECKSTYLE configuration. Check log file"
-		tools_checked["$tool"]=1
-	fi
-	return ${tools_checked[$tool]}
-}
+	if [[ ! -f "./target/$localtime.log" ]]; then
+		## create log file
+		logfile="./target"
 
-function exec_tools() #($tools, $file)
-{
-	tools=$1
-	file=$2
-	for tool in "${tools[@]}"
-	do
-		if check_tool "$tool"; then
-			args=${tool_args[$tool]}
-			case $tool in
-				"perltidy")
-					"$tool" "$file" > "$file.tdy" 2>> "$logfile"
-					if [[ $? != 0 ]]; then
-						echo "${error_messages[$tool]}"
-						return 1
-					fi
-					mv "$file.tdy" "$file"
-					;;
-				"perl")
-					syntax_check=$(perl -cw "$file" 2>&1)
-					echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
-					if [[ $syntax_check != "$file syntax OK" ]]; then
-						echo "${error_messages[$tool]}"
-						return 1
-					fi
-					;;
-				"checkstyle")
-					java -jar checkstyle.jar --debug -c ./google_checks.xml  "$file" >> "$logfile"
-					if [[ $? != 0 ]]; then
-						echo "${error_messages[$tool]}"
-						return 1
-					fi
-					;;
-				*)
-					"$tool" "$file" $args >> "$logfile" 2>> "$logfile"
-					if [[ $? != 0 ]]; then
-						echo "${error_messages[$tool]}"
-						return 1
-					fi
-					;;
-			esac
+		if [[ ! -d "$logfile" ]]
+		then
+			mkdir -p "$logfile"
 		fi
-	done
-}
+		logfile="$logfile/$localtime".log
+
+		if [[ ! -f "$logfile" ]]
+		then
+			touch "$logfile"
+		fi
+		logfile="./target/$localtime.log"
+	fi
+	case "$2" in
+		perl)
+			syntax_check=$( perl -cw $1 2>&1 )
+
+			echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
+			if [[ $syntax_check != "$1 syntax OK" ]]; then
+				print "$1 had syntax errors. Check log file"
+				return 1
+			fi
+
+			## Import
+			if which perlimports >> /dev/null; then
+				perlimports --filename "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting imports. Check log file"
+					return 1
+				fi
+			fi
+
+			### Format
+			if which perltidy >> /dev/null; then
+				perltidy "$1" >> "$1.tdy" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+				mv "$1.tdy" "$1"
+			fi
+
+			### Lint
+			if which perlcritic >> /dev/null; then
+				perlcritic "$1" >> $logfile
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass PERLCRITIC configuration. Check log file"
+					return 1
+				fi
+			fi
+			;;
+		python)
+
+			### Format
+			if which autopep8 >> /dev/null; then
+				autopep8 --in-place "$1" >> "$1" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
+			if which black >> /dev/null; then
+				# Add this configuration on a file
+				black "$1" --target-version py38 --target-version py39 --target-version py310 --target-version py311 --python-cell-magics --skip-string-normalization --verbose >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Black configuration. Check log file"
+					return 1
+				fi
+			fi
+			if which pybetter >> /dev/null; then
+				pybetter --exclude B004 "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass PyBetter configuration. Check log file"
+					return 1
+				fi
+			fi
+			if which unify >> /dev/null; then
+				# Add this configuration on a file
+				unify --in-place "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Unify configuration. Check log file"
+					return 1
+				fi
+			fi
+			if which eradicate >> /dev/null; then
+				eradicate --in-place "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Eradicate configuration. Check log file"
+					return 1
+				fi
+			fi
+			if which isort >> /dev/null; then
+				# Add this configuration on a file
+				isort "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Isort configuration. Check log file"
+					return 1
+				fi
+			fi
+			if which ssort >> /dev/null; then
+				ssort --check "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Ssort configuration. Check log file"
+					return 1
+				fi
+			fi
+			if which teyit >> /dev/null; then
+				# Add this configuration on a file
+				teyit --show-stats --fail-on-change "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Teyit configuration. Check log file"
+					return 1
+				fi
+			fi
+
+			### Lint
+			if which pylint >> /dev/null; then
+				pylint "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass PyLint configuration. Check log file"
+					return 1
+				fi
+			fi
+
+			;;
+		c|cpp)
+			# Format
+			if which clang-format >> /dev/null; then
+				clang-format --style=file --fallback-style=LLVM -i "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
+
+			# Lint
+			if which clang-tidy >> /dev/null; then
+				clang-tidy --config-file=.clang-tidy "$1" >> "$logfile" 2>&1
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass CLANG-TIDY configuration. Check log file"
+					return 1
+				fi
+			fi
+			;;
+		java)
+			## Format
+			if which clang-format >> /dev/null; then
+				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
+
+			## Lint
+			java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
+			if [[ $? != 0 ]]; then
+				print "$1 did not pass CHECKSTYLE configuration. Check log file"
+				return 1
+			fi
+			;;
+		javascript)
+			## Format
+			if which clang-format >> /dev/null; then
+				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
+			;;
+
+			## Lint
+		esac
+		print "$1 had no errors"
+
+		return 0
+	}
 
 ## If an error was found
 errors=0
 
 localtime=$(date '+%Y%m%d%H%M%S')
 modifiedfiles=($(git diff --cached --name-only --diff-filter=d))
-latest_files=($(git log --name-only --pretty=format: --diff-filter=d -n 1))
-
-combined_files=($(echo "${latest_files[@]}" "${modified_files[@]}" | tr ' ' '\n' | sort -u))
 
 ## Add file types, extensions or certain filenames to be ignored during the check
+exceptionfiles=()
 logfile=""
 
 ## Move to root folder
@@ -156,52 +210,31 @@ while [[ ! -d "$PWD/.git" ]]; do
 	cd ..
 done
 
-## Create log file
-if [[ ! -f "./target/$localtime.log" ]]; then
-	## create log file
-	logfile="./target"
-
-	if [[ ! -d "$logfile" ]]
-	then
-		mkdir -p "$logfile"
-	fi
-	logfile="$logfile/$localtime.log"
-
-	if [[ ! -f "$logfile" ]]
-	then
-		touch "$logfile"
-	fi
-fi
-logfile="./target/$localtime.log"
-
-## Avoid same asignation repeated
-last_lang=""
-
 ### analyce all commited files
-for file in "${combined_files[@]}"; do
+for file in "${modifiedfiles[@]}"; do
 
 	print "Checking file $file"
 	case "$(file -b --mime-type $file)" in
 		*java)
-			# [[ "$last_lang" != "java" ]] && tools=("clang-format" "checkstyle") && last_lang="java"
-			[[ "$last_lang" != "java" ]] && tools=("clang-format") && last_lang="java"
+			file_analysis "$file" "java"
 			;;
 		*javascript)
-			[[ "$last_lang" != "javascript" ]] && tools=("clang-format") && last_lang="javascript"
+			file_analysis "$file" "javascript"
 			;;
 		*perl)
-			[[ "$last_lang" != "perl" ]] && tools=("perltidy" "perlimports" "perlcritic") && last_lang="perl"
+			file_analysis "$file" "perl"
 			;;
 		*python)
-			[[ "$last_lang" != "python" ]] && tools=("autopep8" "black" "pybetter" "unify" "eradicate" "teyit" "isort" "ssort" "pylint") && last_lang="python"
+			file_analysis "$file" "python"
 			;;
 		*x-c)
 			case "${file##*.}" in
 				cpp)
-					[[ "$last_lang" != "c++" ]] && tools=("clang-format" "clang-tidy") && last_lang="c++"
+					file_analysis "$file" "cpp"
 					;;
 				c)
-					[[ "$last_lang" != "c" ]] && tools=("clang-format" "clang-tidy") && last_lang="c"
+
+					file_analysis "$file" "c"
 					;;
 				*)
 					print "$file had no errors"
@@ -212,17 +245,16 @@ for file in "${combined_files[@]}"; do
 		*)
 			case "${file##*.}" in
 				pl|pm)
-					[[ "$last_lang" != "perl" ]] && tools=("perltidy" "perlimports" "perlcritic") && last_lang="perl"
+					file_analysis "$file" "perl"
 					;;
 				java)
-					# [[ "$last_lang" != "java" ]] && tools=("clang-format" "checkstyle") && last_lang="java"
-					[[ "$last_lang" != "java" ]] && tools=("clang-format") && last_lang="java"
+					file_analysis "$file" "java"
 					;;
 				py)
-					[[ "$last_lang" != "python" ]] && tools=("autopep8" "black" "pybetter" "unify" "eradicate" "teyit" "isort" "ssort" "pylint") && last_lang="python"
+					file_analysis "$file" "python"
 					;;
 				js)
-					[[ "$last_lang" != "javascript" ]] && tools=("clang-format") && last_lang="javascript"
+					file_analysis "$file" "javascript"
 					;;
 				*)
 					print "$file had no errors"
@@ -232,15 +264,11 @@ for file in "${combined_files[@]}"; do
 			;;
 	esac
 
-	exec_tools "${tools[@]}" "$file"
 	[[ $? == 1 && $errors == 0 ]] && errors=1 && continue
 
 	## Add to git stash
 	git add "$file"
 done
-
-## Return to origin folder
-cd "$initial_dir"
 
 if [[ $errors == 1 ]]; then
 
@@ -250,9 +278,10 @@ if [[ $errors == 1 ]]; then
 	echo "#############################################"
 	echo ""
 
-	cat "$logfile"
-
 	exit 1
 fi
+
+## Return to origin folder
+cd "$initial_dir"
 
 exit 0
