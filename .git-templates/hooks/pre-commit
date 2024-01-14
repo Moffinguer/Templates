@@ -12,22 +12,6 @@ function print() # (message)
 
 function file_analysis() # ($file, $extension) => ()
 {
-	if [[ ! -f "./target/$localtime.log" ]]; then
-		## create log file
-		logfile="./target"
-
-		if [[ ! -d "$logfile" ]]
-		then
-			mkdir -p "$logfile"
-		fi
-		logfile="$logfile/$localtime".log
-
-		if [[ ! -f "$logfile" ]]
-		then
-			touch "$logfile"
-		fi
-		logfile="./target/$localtime.log"
-	fi
 	case "$2" in
 		perl)
 			syntax_check=$( perl -cw $1 2>&1 )
@@ -199,10 +183,26 @@ errors=0
 
 localtime=$(date '+%Y%m%d%H%M%S')
 modifiedfiles=($(git diff --cached --name-only --diff-filter=d))
+## Swap with the above if doing some hook
+#modifiedfiles=($(git log --name-only --pretty=format: --diff-filter=d -n 1))
 
-## Add file types, extensions or certain filenames to be ignored during the check
-exceptionfiles=()
-logfile=""
+## Logfile
+if [[ ! -f "./target/$localtime.log" ]]; then
+		## create log file
+		logfile="./target"
+
+		if [[ ! -d "$logfile" ]]
+		then
+			mkdir -p "$logfile"
+		fi
+		logfile="$logfile/$localtime".log
+
+		if [[ ! -f "$logfile" ]]
+		then
+			touch "$logfile"
+		fi
+		logfile="./target/$localtime.log"
+	fi
 
 ## Move to root folder
 initial_dir=$(pwd)
