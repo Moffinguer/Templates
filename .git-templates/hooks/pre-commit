@@ -186,6 +186,24 @@ function file_analysis() # ($file, $extension) => ()
 				fi
 			fi
 			;;
+		shell)
+			### Format
+			if which shfmt >> /dev/null; then
+				shfmt --write --diff --symplify "$1" >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Shfmt configuration. Check log file"
+					return 1
+				fi
+			fi
+
+			### Lint
+			if which shellcheck >> /dev/null; then
+				shellcheck "$1" >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Shellcheck configuration. Check log file"
+					return 1
+				fi
+			;;
 
 			## Lint
 		esac
@@ -227,6 +245,9 @@ for file in "${modifiedfiles[@]}"; do
 		*python)
 			file_analysis "$file" "python"
 			;;
+		*shell*)
+			file_analysis "$file" "shell"
+			;;
 		*x-c)
 			case "${file##*.}" in
 				cpp)
@@ -256,6 +277,8 @@ for file in "${modifiedfiles[@]}"; do
 				js)
 					file_analysis "$file" "javascript"
 					;;
+				sh)
+					file_analysis "$file" "shell"
 				*)
 					print "$file had no errors"
 					continue
