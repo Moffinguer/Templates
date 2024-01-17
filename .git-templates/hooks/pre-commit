@@ -10,251 +10,206 @@ function print() # (message)
 	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
 }
 
-
-function skip_files() # ($file, $file_type) => ($skip)
+function file_analysis() # ($file, $extension) => ()
 {
-	for exception in "${exceptionfiles[@]}"; do
-		local matches_exception=$( echo "$2" | grep -i "$exception" )
+	case "$2" in
+		perl)
+			syntax_check=$( perl -cw $1 2>&1 )
 
-		if [[ $1 != $exception && ! $1 =~ \.$exception$ && -z $matches_exception ]]; then
-			continue
-		fi
-		echo ""
-		echo ">>>> Skip file $1"
-		echo ""
-		return 1
-	done
-	return 0
-}
-
-function java_files() #( $file, $enabled ) => ()
-{
-	if [[ $2 == 1 ]]; then
-		if [[ "$logfile" != "./target/java/java$localtime.log" ]]; then
-			which clang-format >> /dev/null
-			if [[ $? == 1 ]]; then
-				print "ClangFormat is not installed"
-				exit 1
-			fi
-			logfile="./target/java"
-
-			if [[ ! -d "$logfile" ]]
-			then
-				mkdir -p "$logfile"
+			echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
+			if [[ $syntax_check != "$1 syntax OK" ]]; then
+				print "$1 had syntax errors. Check log file"
+				return 1
 			fi
 
-			logfile="$logfile"/java"$localtime".log
-
-			if [[ ! -f "$logfile" ]]
-			then
-				touch "$logfile"
-			fi
-		fi
-
-		## Format
-		clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 had errors on formatting. Check log file"
-			return 1
-		fi
-
-		java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 did not pass CHECKSTYLE configuration. Check log file"
-			return 1
-		fi
-
-	fi
-	print "$1 had no errors"
-
-	return 0
-}
-
-function js_files() # ($file, $enabled) => ()
-{
-	if [[ $2 == 1 ]]; then
-		if [[ "$logfile" != "./target/javascript/js$localtime.log" ]]; then
-			which clang-format >> /dev/null
-			if [[ $? == 1 ]]; then
-				print "ClangFormat and/or ClangTidy are not installed"
-				exit 1
-			fi
-			logfile="./target/javascript"
-
-			if [[ ! -d "$logfile" ]]
-			then
-				mkdir -p "$logfile"
+			## Import
+			if which perlimports >> /dev/null; then
+				perlimports --filename "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting imports. Check log file"
+					return 1
+				fi
 			fi
 
-			logfile="$logfile"/js"$localtime".log
-
-			if [[ ! -f "$logfile" ]]
-			then
-				touch "$logfile"
-			fi
-		fi
-
-		clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 had errors on formatting. Check log file"
-			return 1
-		fi
-	fi
-	print "$1 had no errors"
-
-	return 0
-}
-
-
-function c_files() # ($file, $enabled, extension) => ()
-{
-	if [[ $2 == 1 ]]; then
-		if [[ "$logfile" != "./target/$3/$3$localtime.log" ]]; then
-			which clang-format >> /dev/null && which clang-tidy >> /dev/null
-			if [[ $? == 1 ]]; then
-				print "ClangFormat and/or ClangTidy are not installed"
-				exit 1
-			fi
-			logfile="./target/$3"
-
-			if [[ ! -d "$logfile" ]]
-			then
-				mkdir -p "$logfile"
+			### Format
+			if which perltidy >> /dev/null; then
+				perltidy "$1" >> "$1.tdy" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+				mv "$1.tdy" "$1"
 			fi
 
-			logfile="$logfile"/$3"$localtime".log
-
-			if [[ ! -f "$logfile" ]]
-			then
-				touch "$logfile"
+			### Lint
+			if which perlcritic >> /dev/null; then
+				perlcritic "$1" >> $logfile
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass PERLCRITIC configuration. Check log file"
+					return 1
+				fi
 			fi
-		fi
+			;;
+		python)
 
-		# Format
-		clang-format --style=file --fallback-style=LLVM -i "$1" >> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 had errors on formatting. Check log file"
-			return 1
-		fi
-
-		# Lint
-		clang-tidy --config-file=.clang-tidy "$1" >> "$logfile" 2>&1
-		if [[ $? != 0 ]]; then
-			print "$1 did not pass CLANG-TIDY configuration. Check log file"
-			return 1
-		fi
-
-	fi
-	print "$1 had no errors"
-
-	return 0
-}
-
-
-function python_files() #($file, $enabled) => ()
-{
-	if [[ $2 == 1 ]]; then
-		if [[ "$logfile" != "./target/python/python$localtime.log" ]]; then
-			which autopep8 >> /dev/null && which pylint >> /dev/null
-			if [[ $? == 1 ]]; then
-				print "Autopep8 and/or PyLint are not installed"
-				exit 1
+			### Format
+			if which autopep8 >> /dev/null; then
+				autopep8 --in-place "$1" >> "$1" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
 			fi
-			## create log file
-			logfile="./target/python"
-
-			if [[ ! -d "$logfile" ]]
-			then
-				mkdir -p "$logfile"
+			if which black >> /dev/null; then
+				# Add this configuration on a file
+				black "$1" --target-version py38 --target-version py39 --target-version py310 --target-version py311 --python-cell-magics --skip-string-normalization --verbose >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Black configuration. Check log file"
+					return 1
+				fi
 			fi
-			logfile="$logfile"/python"$localtime".log
-
-			if [[ ! -f "$logfile" ]]
-			then
-				touch "$logfile"
+			if which pybetter >> /dev/null; then
+				pybetter --exclude B004 "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass PyBetter configuration. Check log file"
+					return 1
+				fi
 			fi
-		fi
-
-		### Format
-		autopep8 "$1" >> "$1" 2>> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 had errors on formatting. Check log file"
-			return 1
-		fi
-
-		### Lint
-		pylint "$1" >> $logfile 2>> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 did not pass PyLint configuration. Check log file"
-			return 1
-		fi
-	fi
-	print "$1 had no errors"
-
-	return 0
-}
-
-
-
-function perl_files() # ($file, $enabled) => ()
-{
-	if [[ $2 == 1 ]]; then
-		if [[ "$logfile" != "./target/perl/perl$localtime.log" ]]; then
-			which perlcritic >> /dev/null && which perltidy >> /dev/null && which perlimports >> /dev/null
-			if [[ $? == 1 ]]; then
-				print "PerlTidy, PerlCritic and/or PerlImports are not installed"
-				exit 1
+			if which unify >> /dev/null; then
+				# Add this configuration on a file
+				unify --in-place "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Unify configuration. Check log file"
+					return 1
+				fi
 			fi
-			## create log file
-			logfile="./target/perl"
-
-			if [[ ! -d "$logfile" ]]
-			then
-				mkdir -p "$logfile"
+			if which eradicate >> /dev/null; then
+				eradicate --in-place "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Eradicate configuration. Check log file"
+					return 1
+				fi
 			fi
-			logfile="$logfile"/perl"$localtime".log
-
-			if [[ ! -f "$logfile" ]]
-			then
-				touch "$logfile"
+			if which isort >> /dev/null; then
+				# Add this configuration on a file
+				isort "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Isort configuration. Check log file"
+					return 1
+				fi
 			fi
-		fi
+			if which ssort >> /dev/null; then
+				ssort --check "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Ssort configuration. Check log file"
+					return 1
+				fi
+			fi
+			if which teyit >> /dev/null; then
+				# Add this configuration on a file
+				teyit --show-stats --fail-on-change "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Teyit configuration. Check log file"
+					return 1
+				fi
+			fi
 
-		syntax_check=$( perl -cw $1 2>&1 )
+			### Lint
+			if which pylint >> /dev/null; then
+				pylint "$1" >> $logfile 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass PyLint configuration. Check log file"
+					return 1
+				fi
+			fi
 
-		echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
+			;;
+		c|cpp)
+			### Format
+			if which clang-format >> /dev/null; then
+				clang-format --style=file --fallback-style=LLVM -i "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
 
-		if [[ $syntax_check != "$1 syntax OK" ]]; then
-			print "$1 had syntax errors. Check log file"
-			return 1
-		fi
+			### Lint
+			if which clang-tidy >> /dev/null; then
+				clang-tidy --config-file=.clang-tidy "$1" >> "$logfile" 2>&1
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass CLANG-TIDY configuration. Check log file"
+					return 1
+				fi
+			fi
+			;;
+		java)
+			### Format
+			if which clang-format >> /dev/null; then
+				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
 
-		## Import
-		perlimports --filename "$1" >> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 had errors on formatting imports. Check log file"
-			return 1
-		fi
+			### Lint
+			java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
+			if [[ $? != 0 ]]; then
+				print "$1 did not pass CHECKSTYLE configuration. Check log file"
+				return 1
+			fi
+			;;
+		javascript)
+			### Format
+			if which clang-format >> /dev/null; then
+				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
+			if which prettier >> /dev/null; then
+				prettier "$1" --write >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
 
-		### Format
-		perltidy "$1" >> "$1.tdy" 2>> "$logfile"
-		if [[ $? != 0 ]]; then
-			print "$1 had errors on formatting. Check log file"
-			return 1
-		fi
-		mv "$1.tdy" "$1"
+			### Lint
+			if which eslint >> /dev/null; then
+				eslint "$1" >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 not pass Eslint configuration. Check log file"
+					return 1
+				fi
+			fi
 
-		### Lint
-		perlcritic "$1" >> $logfile
-		if [[ $? != 0 ]]; then
-			print "$1 did not pass PERLCRITIC configuration. Check log file"
-			return 1
-		fi
-	fi
-	print "$1 had no errors"
+			;;
+		shell)
+			### Format
+			if which shfmt >> /dev/null; then
+				shfmt --write --diff --symplify "$1" >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Shfmt configuration. Check log file"
+					return 1
+				fi
+			fi
 
-	return 0
-}
+			### Lint
+			if which shellcheck >> /dev/null; then
+				shellcheck "$1" >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Shellcheck configuration. Check log file"
+					return 1
+				fi
+			;;
+		esac
+		print "$1 had no errors"
+
+		return 0
+	}
 
 ## If an error was found
 errors=0
@@ -272,38 +227,80 @@ while [[ ! -d "$PWD/.git" ]]; do
 	cd ..
 done
 
+if [[ ! -f "./target/$localtime.log" ]]; then
+		## create log file
+		logfile="./target"
+
+		if [[ ! -d "$logfile" ]]
+		then
+			mkdir -p "$logfile"
+		fi
+		logfile="$logfile/$localtime".log
+
+		if [[ ! -f "$logfile" ]]
+		then
+			touch "$logfile"
+		fi
+		logfile="./target/$localtime.log"
+fi
+
+
 ### analyce all commited files
 for file in "${modifiedfiles[@]}"; do
 
-	## Get file type
-	file_type=$(file -bi $file)
-
-	## Check if file is skipeable
-	skip_files "$file" "$file_type"
-	if [[ $? != 0 ]]; then
-		continue
-	fi
-
 	print "Checking file $file"
-	case $file_type$file in
-		*.cpp)
-			c_files "$file" "0" "cpp"
+	case "$(file -b --mime-type $file)" in
+		*java)
+			file_analysis "$file" "java"
 			;;
-		*.c)
-			c_files "$file" "0" "c"
+		*javascript)
+			file_analysis "$file" "javascript"
 			;;
-		*.pl|*.pm|*"perl"*)
-			perl_files "$file" "0"
+		*perl)
+			file_analysis "$file" "perl"
 			;;
-		*.java)
-			java_files "$file" "0"
+		*python)
+			file_analysis "$file" "python"
 			;;
-		*"python"*|*.py)
-			python_files "$file" "0"
+		*shell*)
+			file_analysis "$file" "shell"
+			;;
+		*x-c)
+			case "${file##*.}" in
+				cpp)
+					file_analysis "$file" "cpp"
+					;;
+				c)
+
+					file_analysis "$file" "c"
+					;;
+				*)
+					print "$file had no errors"
+					continue
+					;;
+			esac
 			;;
 		*)
-			print "$file had no errors"
-			continue
+			case "${file##*.}" in
+				pl|pm)
+					file_analysis "$file" "perl"
+					;;
+				java)
+					file_analysis "$file" "java"
+					;;
+				py)
+					file_analysis "$file" "python"
+					;;
+				js)
+					file_analysis "$file" "javascript"
+					;;
+				sh)
+					file_analysis "$file" "shell"
+				*)
+					print "$file had no errors"
+					continue
+					;;
+			esac
 			;;
 	esac
 
