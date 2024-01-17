@@ -13,6 +13,14 @@ curl -o checkstyle.jar -L https://github.com/checkstyle/checkstyle/releases/down
 ## Javascript
 
 - Clang-format: Install it using your package manager
+- Prettier: Install it using your package manager, or:
+```shell
+npm i prettier # Install it using NPM package manager
+```
+- ESLint: Install it using your package manager, or:
+```shell
+npm i eslint # Install it using NPM package manager
+```
 
 
 ## Python
