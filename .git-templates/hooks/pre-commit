@@ -12,22 +12,6 @@ function print() # (message)
 
 function file_analysis() # ($file, $extension) => ()
 {
-	if [[ ! -f "./target/$localtime.log" ]]; then
-		## create log file
-		logfile="./target"
-
-		if [[ ! -d "$logfile" ]]
-		then
-			mkdir -p "$logfile"
-		fi
-		logfile="$logfile/$localtime".log
-
-		if [[ ! -f "$logfile" ]]
-		then
-			touch "$logfile"
-		fi
-		logfile="./target/$localtime.log"
-	fi
 	case "$2" in
 		perl)
 			syntax_check=$( perl -cw $1 2>&1 )
@@ -141,7 +125,7 @@ function file_analysis() # ($file, $extension) => ()
 
 			;;
 		c|cpp)
-			# Format
+			### Format
 			if which clang-format >> /dev/null; then
 				clang-format --style=file --fallback-style=LLVM -i "$1" >> "$logfile"
 				if [[ $? != 0 ]]; then
@@ -150,7 +134,7 @@ function file_analysis() # ($file, $extension) => ()
 				fi
 			fi
 
-			# Lint
+			### Lint
 			if which clang-tidy >> /dev/null; then
 				clang-tidy --config-file=.clang-tidy "$1" >> "$logfile" 2>&1
 				if [[ $? != 0 ]]; then
@@ -160,7 +144,7 @@ function file_analysis() # ($file, $extension) => ()
 			fi
 			;;
 		java)
-			## Format
+			### Format
 			if which clang-format >> /dev/null; then
 				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
 				if [[ $? != 0 ]]; then
@@ -169,7 +153,7 @@ function file_analysis() # ($file, $extension) => ()
 				fi
 			fi
 
-			## Lint
+			### Lint
 			java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
 			if [[ $? != 0 ]]; then
 				print "$1 did not pass CHECKSTYLE configuration. Check log file"
@@ -177,7 +161,7 @@ function file_analysis() # ($file, $extension) => ()
 			fi
 			;;
 		javascript)
-			## Format
+			### Format
 			if which clang-format >> /dev/null; then
 				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
 				if [[ $? != 0 ]]; then
@@ -185,6 +169,23 @@ function file_analysis() # ($file, $extension) => ()
 					return 1
 				fi
 			fi
+			if which prettier >> /dev/null; then
+				prettier "$1" --write >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
+
+			### Lint
+			if which eslint >> /dev/null; then
+				eslint "$1" >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 not pass Eslint configuration. Check log file"
+					return 1
+				fi
+			fi
+
 			;;
 		shell)
 			### Format
@@ -204,8 +205,6 @@ function file_analysis() # ($file, $extension) => ()
 					return 1
 				fi
 			;;
-
-			## Lint
 		esac
 		print "$1 had no errors"
 
@@ -227,6 +226,24 @@ initial_dir=$(pwd)
 while [[ ! -d "$PWD/.git" ]]; do
 	cd ..
 done
+
+if [[ ! -f "./target/$localtime.log" ]]; then
+		## create log file
+		logfile="./target"
+
+		if [[ ! -d "$logfile" ]]
+		then
+			mkdir -p "$logfile"
+		fi
+		logfile="$logfile/$localtime".log
+
+		if [[ ! -f "$logfile" ]]
+		then
+			touch "$logfile"
+		fi
+		logfile="./target/$localtime.log"
+fi
+
 
 ### analyce all commited files
 for file in "${modifiedfiles[@]}"; do
