@@ -22,7 +22,7 @@ function file_analysis() # ($file, $extension) => ()
 				return 1
 			fi
 
-			## Import
+    	### Format
 			if which perlimports >> /dev/null; then
 				perlimports --filename "$1" >> "$logfile"
 				if [[ $? != 0 ]]; then
@@ -30,8 +30,6 @@ function file_analysis() # ($file, $extension) => ()
 					return 1
 				fi
 			fi
-
-			### Format
 			if which perltidy >> /dev/null; then
 				perltidy "$1" >> "$1.tdy" 2>> "$logfile"
 				if [[ $? != 0 ]]; then
@@ -51,7 +49,6 @@ function file_analysis() # ($file, $extension) => ()
 			fi
 			;;
 		python)
-
 			### Format
 			if which autopep8 >> /dev/null; then
 				autopep8 --in-place "$1" >> "$1" 2>> "$logfile"
@@ -152,7 +149,33 @@ function file_analysis() # ($file, $extension) => ()
 					return 1
 				fi
 			fi
-
+      
+			### Lint
+			java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
+			if [[ $? != 0 ]]; then
+				print "$1 did not pass CHECKSTYLE configuration. Check log file"
+				return 1
+			fi
+			;;
+		javascript)
+			## Format
+			if which clang-format >> /dev/null; then
+				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 had errors on formatting. Check log file"
+					return 1
+				fi
+			fi
+			;;
+		shell)
+			### Format
+			if which shfmt >> /dev/null; then
+				shfmt --write --diff --symplify "$1" >> "$logfile" 2>> "$logfile"
+				if [[ $? != 0 ]]; then
+					print "$1 did not pass Shfmt configuration. Check log file"
+        fi
+      fi
+          
 			### Lint
 			java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
 			if [[ $? != 0 ]]; then
@@ -185,7 +208,6 @@ function file_analysis() # ($file, $extension) => ()
 					return 1
 				fi
 			fi
-
 			;;
 		shell)
 			### Format
@@ -244,10 +266,8 @@ if [[ ! -f "./target/$localtime.log" ]]; then
 		logfile="./target/$localtime.log"
 fi
 
-
 ### analyce all commited files
 for file in "${modifiedfiles[@]}"; do
-
 	print "Checking file $file"
 	case "$(file -b --mime-type $file)" in
 		*java)
