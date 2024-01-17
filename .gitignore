@@ -19,18 +19,10 @@
 ## Exception Complete Folders ( Alphabetically )
 !/.git-templates/
 !/.git-templates/*
-!/javascript/
-!/javascript/*
-!/java/
-!/java/*
-!/perl/
-!/perl/*
-!/python/
-!/python/*
-!/clang/
-!/clang/*
 !/documentation/
 !/documentation/*
+!/tools/
+!/tools/**
 
 ## Exception Folder By Regex
 # Empty By Default
