@@ -71,6 +71,7 @@ TOOL_CMDS["java:clang-format"]='clang-format --style=file --fallback-style=Googl
 TOOL_CMDS["java:checkstyle"]='java -jar checkstyle.jar --debug -c ./google_checks.xml "$1"'
 TOOL_CMDS["java:pmd"]='pmd check -d "$1" -f text -R category/java/design.xml/CyclomaticComplexity'
 
+
 # --- JavaScript tools
 TOOL_CMDS["javascript:clang-format"]='clang-format --style=file --fallback-style=Google -i "$1"'
 TOOL_CMDS["javascript:prettier"]='prettier --write "$1"'
