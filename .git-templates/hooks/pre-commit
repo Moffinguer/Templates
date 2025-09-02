@@ -1,322 +1,289 @@
 #!/usr/bin/env bash
+# Pre-commit modular checker
+# - Allows per-language, per-tool selection via CLI.
+# - Uses syslog/journal (logger -t pre-commit-hook) and prints to console.
+# - Command templates use "$1" as the file placeholder.
+# - If a language has no enabled tools, it is skipped (no fallback).
+# - Designed to run inside or outside a container.
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-function print() # (message)
-{
-	local message=$1
-	length=${#message}
+# -------------------- Helpers / Logging --------------------
+TAG="pre-commit-hook"
 
-	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
-	printf '# %s #\n' "$1"
-	printf '%s\n' $(printf '#%.0s' $(seq 1 $((length+4))))
+log_info()  { logger -t "$TAG" -p user.info -- "$*";  printf '[INFO] %s\n'  "$*"; }
+log_warn()  { logger -t "$TAG" -p user.warning -- "$*"; printf '[WARN] %s\n'  "$*"; }
+log_error() { logger -t "$TAG" -p user.err -- "$*";    printf '[ERROR] %s\n' "$*"; }
+
+banner() {
+  local m="$1"; local l=$(( ${#m} + 4 ))
+  printf '%s\n' "$(printf '#%.0s' $(seq 1 "$l"))"
+  printf '# %s #\n' "$m"
+  printf '%s\n' "$(printf '#%.0s' $(seq 1 "$l"))"
 }
 
-function file_analysis() # ($file, $extension) => ()
-{
-	case "$2" in
-		perl)
-			syntax_check=$( perl -cw $1 2>&1 )
+usage() {
+  cat <<EOF
+Usage: $0 [options]
 
-			echo "" >> "$logfile" && echo "$syntax_check" >> "$logfile"
-			if [[ $syntax_check != "$1 syntax OK" ]]; then
-				print "$1 had syntax errors. Check log file"
-				return 1
-			fi
+Options:
+  --enable LANG:tool1,tool2    Enable only these tools for LANG (overrides defaults)
+  --disable-lang LANG          Skip entire language
+  --set-cmd 'LANG:tool=CMD'    Override command template for tool (CMD must use "\$1" for file)
+  --list-tools                 List available tools & templates
+  --help                       Show this help
+Examples:
+  $0 --enable python:black,pylint
+  $0 --set-cmd 'python:black=black "\$1" --line-length 100'
+EOF
+  exit 0
+}
 
-    	### Format
-			if which perlimports >> /dev/null; then
-				perlimports --filename "$1" >> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 had errors on formatting imports. Check log file"
-					return 1
-				fi
-			fi
-			if which perltidy >> /dev/null; then
-				perltidy "$1" >> "$1.tdy" 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 had errors on formatting. Check log file"
-					return 1
-				fi
-				mv "$1.tdy" "$1"
-			fi
+# -------------------- Default tool templates (preserve original tools) --------------------
+# Keys: "<lang>:<tool>" ; templates must use "$1" for the filename
+declare -A TOOL_CMDS
 
-			### Lint
-			if which perlcritic >> /dev/null; then
-				perlcritic "$1" >> $logfile
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass PERLCRITIC configuration. Check log file"
-					return 1
-				fi
-			fi
-			;;
-		python)
-			### Format
-			if which autopep8 >> /dev/null; then
-				autopep8 --in-place "$1" >> "$1" 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 had errors on formatting. Check log file"
-					return 1
-				fi
-			fi
-			if which black >> /dev/null; then
-				# Add this configuration on a file
-				black "$1" --target-version py38 --target-version py39 --target-version py310 --target-version py311 --python-cell-magics --skip-string-normalization --verbose >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Black configuration. Check log file"
-					return 1
-				fi
-			fi
-			if which pybetter >> /dev/null; then
-				pybetter --exclude B004 "$1" >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass PyBetter configuration. Check log file"
-					return 1
-				fi
-			fi
-			if which unify >> /dev/null; then
-				# Add this configuration on a file
-				unify --in-place "$1" >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Unify configuration. Check log file"
-					return 1
-				fi
-			fi
-			if which eradicate >> /dev/null; then
-				eradicate --in-place "$1" >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Eradicate configuration. Check log file"
-					return 1
-				fi
-			fi
-			if which isort >> /dev/null; then
-				# Add this configuration on a file
-				isort "$1" >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Isort configuration. Check log file"
-					return 1
-				fi
-			fi
-			if which ssort >> /dev/null; then
-				ssort --check "$1" >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Ssort configuration. Check log file"
-					return 1
-				fi
-			fi
-			if which teyit >> /dev/null; then
-				# Add this configuration on a file
-				teyit --show-stats --fail-on-change "$1" >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Teyit configuration. Check log file"
-					return 1
-				fi
-			fi
+# --- Python tools (from original)
+TOOL_CMDS["python:autopep8"]='autopep8 --in-place "$1"'
+TOOL_CMDS["python:black"]='black "$1" --target-version py38 --target-version py39 --target-version py310 --target-version py311 --python-cell-magics --skip-string-normalization --verbose'
+TOOL_CMDS["python:pybetter"]='pybetter --exclude B004 "$1"'
+TOOL_CMDS["python:unify"]='unify --in-place "$1"'
+TOOL_CMDS["python:eradicate"]='eradicate --in-place "$1"'
+TOOL_CMDS["python:isort"]='isort "$1"'
+TOOL_CMDS["python:ssort"]='ssort --check "$1"'
+TOOL_CMDS["python:teyit"]='teyit --show-stats --fail-on-change "$1"'
+TOOL_CMDS["python:pylint"]='pylint --exit-zero "$1"'        # We will treat output/warnings as errors if needed
+TOOL_CMDS["python:mypy"]='mypy --strict "$1"'               # optional
 
-			### Lint
-			if which pylint >> /dev/null; then
-				pylint "$1" >> $logfile 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass PyLint configuration. Check log file"
-					return 1
-				fi
-			fi
+# --- Perl tools (from original)
+TOOL_CMDS["perl:syntax"]='perl -cw "$1"'                    # success prints "syntax OK"
+TOOL_CMDS["perl:perlimports"]='perlimports --filename "$1"'
+TOOL_CMDS["perl:perltidy"]='sh -c "perltidy \"$1\" -b -bext=.tdy && mv \"${1}.tdy\" \"$1\""'
+TOOL_CMDS["perl:perlcritic"]='perlcritic "$1"'
 
-			;;
-		c|cpp)
-			### Format
-			if which clang-format >> /dev/null; then
-				clang-format --style=file --fallback-style=LLVM -i "$1" >> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 had errors on formatting. Check log file"
-					return 1
-				fi
-			fi
+# --- C/C++ tools
+TOOL_CMDS["c:clang-format"]='clang-format --style=file --fallback-style=LLVM -i "$1"'
+TOOL_CMDS["c:clang-tidy"]='clang-tidy --config-file=.clang-tidy "$1"'  # will read .clang-tidy if present
+TOOL_CMDS["c:cppcheck"]='cppcheck --enable=all --inconclusive --std=c11 --error-exitcode=1 --quiet -- "$1"'
 
-			### Lint
-			if which clang-tidy >> /dev/null; then
-				clang-tidy --config-file=.clang-tidy "$1" >> "$logfile" 2>&1
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass CLANG-TIDY configuration. Check log file"
-					return 1
-				fi
-			fi
-			;;
-		java)
-			### Format
-			if which clang-format >> /dev/null; then
-				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 had errors on formatting. Check log file"
-					return 1
-				fi
-			fi
-      
-			### Lint
-			java -jar checkstyle.jar --debug -c ./google_checks.xml  "$1" >> "$logfile"
-			if [[ $? != 0 ]]; then
-				print "$1 did not pass CHECKSTYLE configuration. Check log file"
-				return 1
-			fi
-			;;
-		javascript)
-			### Format
-			if which clang-format >> /dev/null; then
-				clang-format --style=file --fallback-style=Google -i "$1" >> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 had errors on formatting. Check log file"
-					return 1
-				fi
-			fi
-			if which prettier >> /dev/null; then
-				prettier "$1" --write >> "$logfile" 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 had errors on formatting. Check log file"
-					return 1
-				fi
-			fi
+# --- Java tools
+TOOL_CMDS["java:clang-format"]='clang-format --style=file --fallback-style=Google -i "$1"'
+TOOL_CMDS["java:checkstyle"]='java -jar checkstyle.jar --debug -c ./google_checks.xml "$1"'
+TOOL_CMDS["java:pmd"]='pmd check -d "$1" -f text -R category/java/design.xml/CyclomaticComplexity'
 
-			### Lint
-			if which eslint >> /dev/null; then
-				eslint "$1" >> "$logfile" 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 not pass Eslint configuration. Check log file"
-					return 1
-				fi
-			fi
-			;;
-		shell)
-			### Format
-			if which shfmt >> /dev/null; then
-				shfmt --write --diff --symplify "$1" >> "$logfile" 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Shfmt configuration. Check log file"
-					return 1
-				fi
-			fi
 
-			### Lint
-			if which shellcheck >> /dev/null; then
-				shellcheck "$1" >> "$logfile" 2>> "$logfile"
-				if [[ $? != 0 ]]; then
-					print "$1 did not pass Shellcheck configuration. Check log file"
-					return 1
-				fi
-			fi
-			;;
-		esac
-		print "$1 had no errors"
+# --- JavaScript tools
+TOOL_CMDS["javascript:clang-format"]='clang-format --style=file --fallback-style=Google -i "$1"'
+TOOL_CMDS["javascript:prettier"]='prettier --write "$1"'
+TOOL_CMDS["javascript:eslint"]='eslint --max-warnings=0 "$1"'
 
-		return 0
-	}
+# --- Shell tools
+TOOL_CMDS["shell:shfmt"]='shfmt --write --diff --simplify "$1"'
+TOOL_CMDS["shell:shellcheck"]='shellcheck --external-sources "$1"'
+# original used checkstyle for shell too (kept for parity, optional)
+TOOL_CMDS["shell:checkstyle"]='java -jar checkstyle.jar --debug -c ./google_checks.xml "$1"'
 
-## If an error was found
+# -------------------- Default enabled tools per language (original behaviour) --------------------
+declare -A ENABLED
+ENABLED["python"]="autopep8,black,pybetter,unify,eradicate,isort,ssort,teyit,pylint,mypy"
+ENABLED["perl"]="syntax,perlimports,perltidy,perlcritic"
+ENABLED["c"]="clang-format,cppcheck,clang-tidy"
+ENABLED["java"]="clang-format,checkstyle,pmd"
+ENABLED["javascript"]="clang-format,prettier,eslint"
+ENABLED["shell"]="shfmt,shellcheck,checkstyle"
+
+# -------------------- Success / required patterns (some tools always exit 0 even on warnings) --------------------
+# If a key exists here, the tool MUST emit this regex (case-insensitive) to be considered successful.
+declare -A TOOL_MUST_MATCH
+# perl syntax must include "syntax OK"
+TOOL_MUST_MATCH["perl:syntax"]="syntax OK"
+
+# -------------------- CLI parsing --------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help) usage;;
+    --list-tools)
+      banner "Available tools and templates"
+      for k in "${!TOOL_CMDS[@]}"; do
+        printf '%-30s %s\n' "$k" "${TOOL_CMDS[$k]}"
+      done
+      exit 0
+      ;;
+    --enable)
+      shift
+      [[ $# -gt 0 ]] || { echo "--enable needs ARG"; exit 2; }
+      # format: LANG:tool1,tool2
+      IFS=':' read -r LANG LIST <<< "$1"
+      ENABLED["$LANG"]="$LIST"
+      shift
+      ;;
+    --enable=*)
+      arg="${1#--enable=}"
+      IFS=':' read -r LANG LIST <<< "$arg"
+      ENABLED["$LANG"]="$LIST"
+      shift
+      ;;
+    --disable-lang)
+      shift
+      [[ $# -gt 0 ]] || { echo "--disable-lang needs ARG"; exit 2; }
+      ENABLED["$1"]=""
+      shift
+      ;;
+    --disable-lang=*)
+      arg="${1#--disable-lang=}"
+      ENABLED["$arg"]=""
+      shift
+      ;;
+    --set-cmd)
+      shift
+      [[ $# -gt 0 ]] || { echo "--set-cmd needs ARG"; exit 2; }
+      pair="$1"
+      shift
+      # pair format: lang:tool=command (command must use "$1")
+      langtool="${pair%%=*}"
+      cmd="${pair#*=}"
+      TOOL_CMDS["$langtool"]="$cmd"
+      ;;
+    --set-cmd=*)
+      pair="${1#--set-cmd=}"
+      langtool="${pair%%=*}"
+      cmd="${pair#*=}"
+      TOOL_CMDS["$langtool"]="$cmd"
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      ;;
+  esac
+done
+
+# -------------------- Utility: run a tool template --------------------
+run_tool_for_file() {
+  # args: <lang> <tool> <file>
+  local lang="$1" tool="$2" file="$3" key="${lang}:${tool}"
+  local cmdtmpl="${TOOL_CMDS[$key]:-}"
+  if [[ -z "$cmdtmpl" ]]; then
+    log_warn "No command template for $key — skipping"
+    return 0
+  fi
+  # Run template in a subshell with $1 bound to the filename
+  log_info "Running $key on $file"
+  local out rc
+  # We run via bash -c to allow complex commands; positional $1 will be the filename
+  out="$(bash -lc "set -o pipefail; $cmdtmpl" -- "$file" 2>&1)" || rc=$? || true
+  rc=${rc:-0}
+
+  # Always send output to system log (truncate long output)
+  if [[ -n "$out" ]]; then
+    # Log first chunk to logger, and print everything to console
+    logger -t "$TAG" -p user.info -- "[$key] $file output (first 8k): ${out:0:8192}"
+    printf '%s\n' "$out"
+  fi
+
+  # If tool has a must-match pattern, require it to appear (case-insensitive)
+  local mustpat="${TOOL_MUST_MATCH[$key]:-}"
+  if [[ -n "$mustpat" ]]; then
+    if ! grep -i -q -E "$mustpat" <<< "$out"; then
+      log_error "$key failed: expected pattern '$mustpat' not found in output for $file"
+      return 1
+    fi
+  fi
+
+  # Non-zero exit code -> failure
+  if (( rc != 0 )); then
+    log_error "$key returned exit code $rc for $file"
+    return 1
+  fi
+
+  # If command modified the working copy, restage the file
+  if ! git diff --quiet -- "$file"; then
+    git add -- "$file"
+    log_info "Restaged $file after $key"
+  fi
+
+  log_info "$key OK for $file"
+  return 0
+}
+
+# -------------------- Discover staged files --------------------
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$(pwd)")"
+cd "$repo_root"
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMR || true)
+if (( ${#staged[@]} == 0 )); then
+  log_info "No staged files. Exiting."
+  exit 0
+fi
+
 errors=0
+banner "Starting pre-commit checks"
 
-localtime=$(date '+%Y%m%d%H%M%S')
-modifiedfiles=($(git diff --cached --name-only --diff-filter=d))
+# -------------------- File type detection and dispatch --------------------
+for file in "${staged[@]}"; do
+  [[ -f "$file" ]] || continue
+  banner "Checking $file"
+  mime=$(file -b --mime-type -- "$file" 2>/dev/null || true)
+  lang=""
+  case "$mime" in
+    *python*) lang="python" ;;
+    *javascript*|application/javascript) lang="javascript" ;;
+    *java*) lang="java" ;;
+    *x-shellscript*|*shellscript*|text/x-sh) lang="shell" ;;
+    *perl*) lang="perl" ;;
+    *x-c*|*x-c++*) 
+      # pick C/C++ depending on extension
+      ext="${file##*.}"
+      case "${ext,,}" in cpp|cc|cxx|hpp|hh) lang="c" ;; *) lang="c" ;; 
+      esac
+      ;;
+    *) 
+      # fallback to extension-based detection
+      ext="${file##*.}"
+      case "${ext,,}" in
+        py) lang="python" ;;
+        js|mjs|cjs|jsx|ts|tsx) lang="javascript" ;;
+        java) lang="java" ;;
+        sh|bash) lang="shell" ;;
+        pl|pm|t) lang="perl" ;;
+        c|h|cpp|cc|cxx) lang="c" ;;
+        *) lang="" ;;
+      esac
+      ;;
+  esac
 
-## Add file types, extensions or certain filenames to be ignored during the check
-exceptionfiles=()
-logfile=""
+  if [[ -z "$lang" ]]; then
+    log_warn "No handler for $file (mime=$mime) — skipping"
+    continue
+  fi
 
-## Move to root folder
-initial_dir=$(pwd)
-while [[ ! -d "$PWD/.git" ]]; do
-	cd ..
+  # If language is disabled, skip
+  tools_csv="${ENABLED[$lang]:-}"
+  if [[ -z "$tools_csv" ]]; then
+    log_info "Language $lang is disabled or has no configured tools — skipping $file"
+    continue
+  fi
+
+  # Iterate tools
+  IFS=',' read -r -a tools_arr <<< "$tools_csv"
+  for tool in "${tools_arr[@]}"; do
+    # trim spaces
+    tool="${tool## }"
+    tool="${tool%% }"
+    if [[ -z "$tool" ]]; then continue; fi
+    if ! run_tool_for_file "$lang" "$tool" "$file"; then
+      errors=1
+      # continue checking other files/tools (do not abort immediately)
+    fi
+  done
 done
 
-if [[ ! -f "./target/$localtime.log" ]]; then
-		## create log file
-		logfile="./target"
-
-		if [[ ! -d "$logfile" ]]
-		then
-			mkdir -p "$logfile"
-		fi
-		logfile="$logfile/$localtime".log
-
-		if [[ ! -f "$logfile" ]]
-		then
-			touch "$logfile"
-		fi
-		logfile="./target/$localtime.log"
+# -------------------- Finalize --------------------
+if (( errors != 0 )); then
+  echo
+  banner "ERRORS FOUND - pre-commit blocked"
+  echo "Check system journal (journalctl -t pre-commit-hook) or syslog for full details."
+  exit 1
 fi
 
-### analyce all commited files
-for file in "${modifiedfiles[@]}"; do
-	print "Checking file $file"
-	case "$(file -b --mime-type $file)" in
-		*java)
-			file_analysis "$file" "java"
-			;;
-		*javascript)
-			file_analysis "$file" "javascript"
-			;;
-		*perl)
-			file_analysis "$file" "perl"
-			;;
-		*python)
-			file_analysis "$file" "python"
-			;;
-		*shell*)
-			file_analysis "$file" "shell"
-			;;
-		*x-c)
-			case "${file##*.}" in
-				cpp)
-					file_analysis "$file" "cpp"
-					;;
-				c)
-
-					file_analysis "$file" "c"
-					;;
-				*)
-					print "$file had no errors"
-					continue
-					;;
-			esac
-			;;
-		*)
-			case "${file##*.}" in
-				pl|pm)
-					file_analysis "$file" "perl"
-					;;
-				java)
-					file_analysis "$file" "java"
-					;;
-				py)
-					file_analysis "$file" "python"
-					;;
-				js)
-					file_analysis "$file" "javascript"
-					;;
-				sh)
-					file_analysis "$file" "shell"
-				*)
-					print "$file had no errors"
-					continue
-					;;
-			esac
-			;;
-	esac
-
-	[[ $? == 1 && $errors == 0 ]] && errors=1 && continue
-
-	## Add to git stash
-	git add "$file"
-done
-
-if [[ $errors == 1 ]]; then
-
-	echo ""
-	echo "#################WARNINGS####################"
-	echo "#       Check log files at ./target/* 	  #"
-	echo "#############################################"
-	echo ""
-
-	exit 1
-fi
-
-## Return to origin folder
-cd "$initial_dir"
-
+log_info "All checks passed."
 exit 0
